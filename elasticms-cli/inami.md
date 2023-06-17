@@ -51,7 +51,7 @@ Il faut compter une bonne demi heure
 
 Un fichier `menu.json` contient un JSON doublement encodé qu'il suffit de copier/coller dans une structure (créer un draft, save as draft, Raw edit avec les droits super user).
 
-Un fichier `ouuids.json` qui contient un cache qui permet de determiner si une url a étét importée ou pas et avec quel ouuid et quel type.
+Un fichier `ouuids.json` qui contient un cache qui permet de determiner si une url a été importée ou pas et avec quel ouuid et quel type.
 
 Un fichier `Import-Report.xlsx` qui liste toutes les erreurs rencontrées pendant la génération de la structure:
 
@@ -63,6 +63,7 @@ Un fichier `Import-Report.xlsx` qui liste toutes les erreurs rencontrées pendan
  * erreurs `not-imported` impossible de trouver un document correspondant à cette ligne dans ems
  * erreurs `parent_not_imported` impossible de trouver un document correspondant au parent de cette ligne dans ems
  * erreurs `parent_not_in_structure` impossible de trouver un document correspondant au parent de cette ligne dans la structure en cours de génération
+ * erreurs: `too_much_import` une même url est associée à plusieurs document dans ems (et donc plusieurs ouuid)
 
 
 

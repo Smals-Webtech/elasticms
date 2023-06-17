@@ -17,6 +17,7 @@ use EMS\CommonBundle\Search\Search;
 use EMS\Helpers\Standard\Json;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\HeaderUtils;
@@ -34,6 +35,7 @@ final class GenerateStructureCommand extends AbstractCommand
     final public const BASE_URL = 'https://www.inami.fgov.be';
 
     private const ARGUMENT_FILE = 'file';
+    private const OPTION_CACHE = 'cache';
     private string $file;
     /** @var string[][] */
     private array $brothers;
@@ -44,6 +46,7 @@ final class GenerateStructureCommand extends AbstractCommand
     private SpreadsheetGeneratorService $spreadsheetGeneratorService;
     private JsonMenuNested $menu;
     private CacheManager $cacheManager;
+    private bool $cache;
 
     public function __construct(private readonly AdminHelper $adminHelper, private readonly FileReaderInterface $fileReader)
     {
@@ -57,6 +60,7 @@ final class GenerateStructureCommand extends AbstractCommand
         $this
             ->setDescription('Source file to convert into structure')
             ->addArgument(self::ARGUMENT_FILE, InputArgument::REQUIRED, 'File path (xlsx or csv)')
+            ->addOption(self::OPTION_CACHE, null, InputOption::VALUE_NONE, 'use a cache file for ouuid matches (might hide duplicate ouuids per url errors)')
         ;
     }
 
@@ -64,6 +68,7 @@ final class GenerateStructureCommand extends AbstractCommand
     {
         parent::initialize($input, $output);
         $this->file = $this->getArgumentString(self::ARGUMENT_FILE);
+        $this->cache = $this->getOptionBool(self::OPTION_CACHE);
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -271,7 +276,7 @@ final class GenerateStructureCommand extends AbstractCommand
 
     private function loadOuuids(): void
     {
-        if (\file_exists('ouuids.json')) {
+        if ($this->cache && \file_exists('ouuids.json')) {
             $content = \file_get_contents('ouuids.json');
             if (false === $content) {
                 throw new \RuntimeException('Unexpected false content');
