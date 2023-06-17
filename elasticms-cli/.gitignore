@@ -24,3 +24,6 @@
 /document/
 Audit-*
 ~$Audit-*
+/Import-Report.xlsx
+/menu.json
+/ouuids.json

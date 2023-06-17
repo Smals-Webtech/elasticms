@@ -21,6 +21,8 @@ Il reste à lancer la commande suivante:
 php bin/console emscli:file-reader:generate-structure /home/dockerce/documents/inami/WebPlusNav_230425.xlsx
 ```
 
+Il faut compter une bonne demi heure
+
 ## Algo
  
   * Charge un mapping qui permet de déterminer l'ouuid et le type pour une url
