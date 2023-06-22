@@ -105,6 +105,8 @@ final class GenerateStructureCommand extends AbstractCommand
             $this->io->progressAdvance();
         }
         $this->treatBrotherhood();
+        $this->checkLocales();
+
         $this->io->progressFinish();
         $this->generateRapport();
 
@@ -166,6 +168,16 @@ final class GenerateStructureCommand extends AbstractCommand
             if (!isset($this->hitByPath[$row[self::FIELD_URL]])) {
                 $this->logWarning($row[self::FIELD_URL], 'Not imported in elasticMS', 'not-imported');
                 continue;
+            }
+            if ('TRUE' === $row[self::FIELD_HIDDEN] && 'Page' === $row[self::FIELD_TYPE]) {
+                $urls = [];
+                foreach ($this->brothers as $b) {
+                    $urls[] = $b[self::FIELD_URL];
+                }
+                if ((\array_count_values($urls)[$row[self::FIELD_URL]] ?? 0) > 1) {
+                    $this->logWarning($row[self::FIELD_URL], 'Hide menu', 'duplicate-menu');
+                    continue;
+                }
             }
             if (null === $firstPage && \in_array($row[self::FIELD_TYPE], ['Area', 'Page'])) {
                 $firstPage = $row;
@@ -335,5 +347,19 @@ final class GenerateStructureCommand extends AbstractCommand
     private function generateMenuId(string $id): string
     {
         return \sha1(\sprintf('import_structure:%s', $id));
+    }
+
+    private function checkLocales()
+    {
+        foreach ($this->menu as $item) {
+            foreach (['fr', 'nl'] as $locale) {
+                if (! isset($item->getObject()['label_' . $locale])) {
+                    $emsLink = \explode(':', $item->getObject()[$item->getType()]);
+                    $id = \end($emsLink);
+                    $path = \array_search(['id' => $id, 'type' => $item->getType()], $this->hitByPath);
+                    $this->logWarning(($path ?: $id), \sprintf('missing %s', $locale), 'menu_mismatch');
+                }
+            }
+        }
     }
 }
