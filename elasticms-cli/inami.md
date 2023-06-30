@@ -33,13 +33,20 @@ Il faut compter une bonne demi heure
       * une dont la colonne SorteOrder vaut 1, ligne comprise
       * la ligne qui suit dont la colonne SortOrder vaut aussi 1, non comprise
   * Pour chaques élements de la fraterie
-    * On vérifie que l'url n'est pas en réalité une redirection vers une nouvelle url (une url inconnu jusqu'ici)
-      * Si oui on considère cette url à la place  de l'url qui est une redirection
-    * On vérifier que l'url renvoit un 200 
-    * On vérifie que cette url est bien présente dans ems (on ne peut pas ajouter une page inconnue)
-    * On cherche dans la fraterie la première ligne de 'Type' Area ou Page
-      * Pour cette ligne, on parse le dom de l'url à la recherche du dernier noeud du '.breadcrumb a'
-        * Si il n'existe pas la fraterie est ajoutée à la racine de la structure
+    * On vérifie d abord le parent (colonne A)
+      * que l'url n'est pas en réalité une redirection vers une nouvelle url (une url inconnu jusqu'ici)
+        * Si oui on considère cette url à la place de l'url qui est une redirection
+      * On vérifier que l'url renvoit un 200
+      * On vérifie que cette url est bien présente dans ems (on ne peut pas ajouter une page inconnue)
+    * On vérifie que l'url (colonne B)
+      * on verifie qu'il n y a pas dans la même fraterie un lien identique,et dont l'un est une Page en hide et l autre AuthoredLinkPlain et non hide
+        * dans ce cas on garde Page et on ignore AuthoredLinkPlain, mais on copie les info title et hide de AuthoredLinkPlain vers Page.
+      * n'est pas en réalité une redirection vers une nouvelle url (une url inconnu jusqu'ici)
+          * Si oui on considère cette url à la place  de l'url qui est une redirection
+      * On vérifier que l'url renvoit un 200 
+      * On vérifie que cette url est bien présente dans ems (on ne peut pas ajouter une page inconnue)
+      * on vérie dans le cas de Type Page ou Area, pour lequel la based (parent) de l'url (colonne B) correspond parent (colonne A)  
+      * On vérifie que le parent n a pas généré d erreur avant
         * Si il existe on recherche le parent dans la structure en cours de génération
           * Sur base du path du parent on cherche l'ouuid
           * Sur base de l'ouuid on génère (seed+hash) l'identifiant que devrait avoir le noeud dans la structure en cours de génération
@@ -55,16 +62,26 @@ Un fichier `ouuids.json` qui contient un cache qui permet de determiner si une u
 
 Un fichier `Import-Report.xlsx` qui liste toutes les erreurs rencontrées pendant la génération de la structure:
 
- * erreurs `http_error` correspondent à des urls qui n'ont pas pu être téléchargées depsui l'actuel site web de l'INAMI, d'après moi ces urls ne doivent pas être reprises
- * erreurs `redirect` correspondent à des urls qui sont des redirections vers des urls qui ont déjà été ajoutées à la structure, d'après moi ces urls ne doivent pas être reprises
- * erreurs `hide_mismatch` correspondent à des documents qui sont repris plusieurs fois dans une même fraterie (soit plusieurs fois avec la même url soit avec les variants par langue)
-   * dans ce cas le noeud est toujours forcé à `hide = false`
- * erreurs `no_page_in_menu` impossible de dtéterminer le parent de la fraterie car elle ne contient pas ligne Page ou Area
- * erreurs `not-imported` impossible de trouver un document correspondant à cette ligne dans ems
- * erreurs `parent_not_imported` impossible de trouver un document correspondant au parent de cette ligne dans ems
- * erreurs `parent_not_in_structure` impossible de trouver un document correspondant au parent de cette ligne dans la structure en cours de génération
- * erreurs: `too_much_import` une même url est associée à plusieurs document dans ems (et donc plusieurs ouuid)
-
+3 Categories d erreurs : 
+  * ERROR : auraît peut-être du être importé cette ligne du fichier
+     * erreurs `parent_http_error` correspondent à des urls parent (colonne A) qui n'ont pas pu être téléchargées depuis l'actuel site web de l'INAMI, d'après moi ces urls ne doivent pas être reprises
+     * erreurs `http_error` correspondent à des urls (colonne B) qui n'ont pas pu être téléchargées depsui l'actuel site web de l'INAMI, d'après moi ces urls ne doivent pas être reprises
+     * erreurs `not-imported` impossible de trouver un document correspondant à l url (colonne B) de cette ligne dans ems
+     * erreurs `parent_not_imported` impossible de trouver un document correspondant à l url parent (colonne A) de cette ligne dans ems
+     * erreurs `parent_not_defined` l'url (colonne B) n a pas posé de soucis, mais nous avions une erreur sur le parent et n'a donc pu ête importé
+     * erreurs `too_much_import` une même url est associée à plusieurs document dans ems (et donc plusieurs ouuid lié) c'est du au page ou le swith de lang vers NL pointait sur la home ou le décalage dans stastique.
+ 
+  * IGNORE: on ignore volontairement cette ligne du fichier :
+    * erreurs `parent_mismatch` correspondent à des documents de Type Page ou Area, pour lequel la based (parent) de l'url (colonne B) ne correspond pas au parent (colonne A)
+    * erreurs `duplicate-menu` correspondent à des documents qui ont un un frère avec la même url(colonne B) mais dont un est une Page en hide et l autre AuthoredLinkPlain et non hide
+      * dans ce cas on garde Page et on ignore AuthoredLinkPlain, mais on copie les info title et hide de AuthoredLinkPlain vers Page.
+    
+  * INFO: information supplémentaires erreurs sur les lignes ou sur le résultats final :
+    * erreurs `parent_redirect` correspondent à des urls parent (colonne A)  qui sont des redirections vers des urls qui ont déjà été ajoutées à la structure, d'après moi ces urls ne doivent pas être reprises
+    * erreurs `redirect` correspondent à des urls parent (colonne B) qui sont des redirections vers des urls qui ont déjà été ajoutées à la structure, d'après moi ces urls ne doivent pas être reprises
+    * erreurs `hide_mismatch` correspondent à des documents qui sont repris plusieurs fois dans une même fraterie (soit plusieurs fois avec la même url soit avec les variants par langue)
+      * dans ce cas le noeud est toujours forcé à `hide = false`
+    * erreurs `menu_mismatch` sur le résultats final on vérifie que tous les entrées de menu on un label_fr et label_nl si c'est pas le cas j'obtiens cette erreur
 
 
 Attention, il est impossible de déterminer si les fraterie sont complète ou pas. J'ai documenté des exemples de fraterie manifestement incomplète.
