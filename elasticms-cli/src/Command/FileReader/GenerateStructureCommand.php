@@ -403,6 +403,7 @@ final class GenerateStructureCommand extends AbstractCommand
                     $id = \end($emsLink);
                     $path = \array_search(['id' => $id, 'type' => $item->getType()], $this->hitByPath);
                     $this->logWarning($path ?: $id, \sprintf('missing %s in parent %s', $locale, $item->getParent()->getLabel()), 'menu_mismatch', 'INFO');
+
                 }
             }
         }
