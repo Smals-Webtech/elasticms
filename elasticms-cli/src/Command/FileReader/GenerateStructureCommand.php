@@ -358,7 +358,7 @@ final class GenerateStructureCommand extends AbstractCommand
                     continue;
                 }
                 if (isset($this->hitByPath[$value])) {
-                    $this->logWarning($value, \sprintf('imported multiple time with oouid %s and ouuid %s', $this->hitByPath[$value]['id'], $ouuid), 'too_much_import');
+                    $this->logWarning($value, \sprintf('imported multiple time with oouid %s and ouuid %s', $this->hitByPath[$value]['id'], $ouuid), 'too_much_import', 'INFO');
                     continue;
                 }
                 $this->hitByPath[$value] = [

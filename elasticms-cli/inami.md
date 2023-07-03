@@ -69,8 +69,7 @@ Un fichier `Import-Report.xlsx` qui liste toutes les erreurs rencontrées pendan
      * erreurs `not-imported` impossible de trouver un document correspondant à l url (colonne B) de cette ligne dans ems
      * erreurs `parent_not_imported` impossible de trouver un document correspondant à l url parent (colonne A) de cette ligne dans ems
      * erreurs `parent_not_defined` l'url (colonne B) n a pas posé de soucis, mais nous avions une erreur sur le parent et n'a donc pu ête importé
-     * erreurs `too_much_import` une même url est associée à plusieurs document dans ems (et donc plusieurs ouuid lié) c'est du au page ou le swith de lang vers NL pointait sur la home ou le décalage dans stastique.
- 
+    
   * IGNORE: on ignore volontairement cette ligne du fichier :
     * erreurs `parent_mismatch` correspondent à des documents de Type Page ou Area, pour lequel la based (parent) de l'url (colonne B) ne correspond pas au parent (colonne A)
     * erreurs `duplicate-menu` correspondent à des documents qui ont un un frère avec la même url(colonne B) mais dont un est une Page en hide et l autre AuthoredLinkPlain et non hide
@@ -82,6 +81,7 @@ Un fichier `Import-Report.xlsx` qui liste toutes les erreurs rencontrées pendan
     * erreurs `hide_mismatch` correspondent à des documents qui sont repris plusieurs fois dans une même fraterie (soit plusieurs fois avec la même url soit avec les variants par langue)
       * dans ce cas le noeud est toujours forcé à `hide = false`
     * erreurs `menu_mismatch` sur le résultats final on vérifie que tous les entrées de menu on un label_fr et label_nl si c'est pas le cas j'obtiens cette erreur
+    * erreurs `too_much_import` une même url est associée à plusieurs document dans ems (et donc plusieurs ouuid lié) c'est du au page ou le swith de lang vers NL pointait sur la home ou le décalage dans stastique.
 
 
 Attention, il est impossible de déterminer si les fraterie sont complète ou pas. J'ai documenté des exemples de fraterie manifestement incomplète.
