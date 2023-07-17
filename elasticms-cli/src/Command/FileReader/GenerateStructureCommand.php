@@ -28,10 +28,11 @@ final class GenerateStructureCommand extends AbstractCommand
     final public const FIELD_URL = 1;
     final public const FIELD_TITLE = 2;
     final public const FIELD_TYPE = 3;
-    final public const FIELD_PARENT = 4;
-    final public const FIELD_SORT_ORDER = 5;
-    final public const FIELD_HIDDEN = 6;
-    final public const FIELD_INHERITED = 7;
+    final public const FIELD_DEPTH = 4;
+    final public const FIELD_PARENT = 5;
+    final public const FIELD_SORT_ORDER = 6;
+    final public const FIELD_HIDDEN = 7;
+
     final public const BASE_URL = 'https://www.inami.fgov.be';
     final public const TECHNICAL_BASE_URL = 'http://nihdi.riziv.prdval';
 
@@ -91,12 +92,18 @@ final class GenerateStructureCommand extends AbstractCommand
         $rows = $this->fileReader->getData($this->file);
         $this->io->progressStart(\count($rows) - 1);
 
-        if ($rows[0] !== ['WebUrl', 'Url', 'Title', 'Type', 'Parent', 'SortOrder', 'Hidden', 'Inherited']) {
+        if ($rows[0] !== ['WebUrl', 'Url', 'Title', 'Type', 'Depth', 'Parent', 'SortOrder', 'Hidden']) {
             throw new \RuntimeException('Unexpected excel structure');
         }
         $this->brothers = [];
         \array_shift($rows);
         foreach ($rows as $value) {
+
+            if (null == $value[self::FIELD_SORT_ORDER]) {
+                $this->logWarning($value[self::FIELD_URL], \sprintf('For parent "%s" : SortOrder is missing', $value[self::FIELD_PARENT_URL]), 'sort_order_missing', 'IGNORE');
+                continue;
+            }
+
             $sortOrder = \intval($value[self::FIELD_SORT_ORDER]);
             if (1 === $sortOrder) {
                 $this->treatBrotherhood();
