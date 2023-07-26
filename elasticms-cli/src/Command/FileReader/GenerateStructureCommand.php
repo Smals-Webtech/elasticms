@@ -104,11 +104,6 @@ final class GenerateStructureCommand extends AbstractCommand
                 continue;
             }
 
-            if ("0" === $value[self::FIELD_DEPTH]) {
-                $this->logWarning($value[self::FIELD_URL], \sprintf('With parent "%s" : depth 0', $value[self::FIELD_PARENT_URL]), 'depth_zero', 'IGNORE');
-                continue;
-            }
-
             $sortOrder = \intval($value[self::FIELD_SORT_ORDER]);
             if (1 === $sortOrder) {
                 $this->treatBrotherhood();
