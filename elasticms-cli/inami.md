@@ -75,6 +75,7 @@ Un fichier `Import-Report.xlsx` qui liste toutes les erreurs rencontrées pendan
     * erreurs `duplicate-menu` correspondent à des documents qui ont un un frère avec la même url(colonne B) mais dont un est une Page en hide et l autre AuthoredLinkPlain et non hide
       * dans ce cas on garde Page et on ignore AuthoredLinkPlain, mais on copie les info title et hide de AuthoredLinkPlain vers Page.
     * erreurs `sort_order_missing` correspondent à ligne dans l excel dont le SortOrder n est pas défini (généralement quand la colonne A (url parent) == la colonne B (url du document))
+    * erreurs `depth_zero` correspondent à ligne dans l excel dont le type est  AuthoredLinkPlain et le depth = 0 mais après les autres processus sur AuthoredLinkPlain.
 
   * INFO: information supplémentaires erreurs sur les lignes ou sur le résultats final :
     * erreurs `parent_redirect` correspondent à des urls parent (colonne A)  qui sont des redirections vers des urls qui ont déjà été ajoutées à la structure, d'après moi ces urls ne doivent pas être reprises
