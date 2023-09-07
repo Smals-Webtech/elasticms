@@ -98,7 +98,6 @@ final class GenerateStructureCommand extends AbstractCommand
         $this->brothers = [];
         \array_shift($rows);
         foreach ($rows as $value) {
-
             if (null == $value[self::FIELD_SORT_ORDER]) {
                 $this->logWarning($value[self::FIELD_URL], \sprintf('For parent "%s" : SortOrder is missing', $value[self::FIELD_PARENT_URL]), 'sort_order_missing', 'IGNORE');
                 continue;
@@ -195,12 +194,18 @@ final class GenerateStructureCommand extends AbstractCommand
                     if ($id != $key && $b[self::FIELD_URL] === $row[self::FIELD_URL] && 'FALSE' === $b[self::FIELD_HIDDEN] && 'AuthoredLinkPlain' === $b[self::FIELD_TYPE] && 'Page' === $row[self::FIELD_TYPE]) {
                         $row[self::FIELD_TITLE] = $b[self::FIELD_TITLE];
                         $row[self::FIELD_HIDDEN] = $b[self::FIELD_HIDDEN];
+                        $row[self::FIELD_SORT_ORDER] = $b[self::FIELD_SORT_ORDER];
                     }
                 }
                 if ($duplicate) {
                     $this->logWarning($row[self::FIELD_URL], 'Url (type=Page) is hide in menu but a brother (AuthoredLinkPlain) exist with same URL', 'duplicate-menu', 'IGNORE');
                     continue;
                 }
+            }
+
+            if ('AuthoredLinkPlain' === $row[self::FIELD_TYPE] && '0' === $row[self::FIELD_DEPTH]) {
+                $this->logWarning($row[self::FIELD_URL], \sprintf('With parent "%s" : AuthoredLinkPlain depth 0', $row[self::FIELD_PARENT_URL]), 'depth_zero', 'IGNORE');
+                continue;
             }
 
             $result = $this->cacheManager->get(self::BASE_URL.$row[self::FIELD_URL]);
@@ -267,7 +272,7 @@ final class GenerateStructureCommand extends AbstractCommand
         if (0 === \count($children)) {
             return;
         }
-
+        \usort($children, fn ($a, $b) => $a[self::FIELD_SORT_ORDER] <=> $b[self::FIELD_SORT_ORDER]);
         $parentUrl = new Url(self::BASE_URL.$this->brothers[0][self::FIELD_PARENT_URL]);
 
         $parentMenuId = $this->generateMenuId($this->getIdByPath($parentUrl->getPath()));
@@ -410,7 +415,6 @@ final class GenerateStructureCommand extends AbstractCommand
                     $id = \end($emsLink);
                     $path = \array_search(['id' => $id, 'type' => $item->getType()], $this->hitByPath);
                     $this->logWarning($path ?: $id, \sprintf('missing %s in parent %s', $locale, $item->getParent()->getLabel()), 'menu_mismatch', 'INFO');
-
                 }
             }
         }
