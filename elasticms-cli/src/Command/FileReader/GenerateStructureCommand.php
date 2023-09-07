@@ -19,20 +19,22 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 
 final class GenerateStructureCommand extends AbstractCommand
 {
     protected static $defaultName = 'emscli:file-reader:generate-structure';
-    final public const FIELD_URL = 0;
-    final public const FIELD_TITLE = 1;
-    final public const FIELD_ID = 2;
+    final public const FIELD_PARENT_URL = 0;
+    final public const FIELD_URL = 1;
+    final public const FIELD_TITLE = 2;
     final public const FIELD_TYPE = 3;
-    final public const FIELD_PARENT_ID = 4;
-    final public const FIELD_SORT_ORDER = 5;
-    final public const FIELD_HIDDEN = 6;
+    final public const FIELD_DEPTH = 4;
+    final public const FIELD_PARENT = 5;
+    final public const FIELD_SORT_ORDER = 6;
+    final public const FIELD_HIDDEN = 7;
+
     final public const BASE_URL = 'https://www.inami.fgov.be';
+    final public const TECHNICAL_BASE_URL = 'http://nihdi.riziv.prdval';
 
     private const ARGUMENT_FILE = 'file';
     private const OPTION_CACHE = 'cache';
@@ -40,7 +42,7 @@ final class GenerateStructureCommand extends AbstractCommand
     /** @var string[][] */
     private array $brothers;
     /** @var string[][] */
-    private array $logs = [['URL', 'Message', 'Type']];
+    private array $logs = [['URL', 'Message', 'Type', 'Category']];
     /** @var string[][] */
     private array $hitByPath;
     private SpreadsheetGeneratorService $spreadsheetGeneratorService;
@@ -90,12 +92,17 @@ final class GenerateStructureCommand extends AbstractCommand
         $rows = $this->fileReader->getData($this->file);
         $this->io->progressStart(\count($rows) - 1);
 
-        if ($rows[0] !== ['Url', 'Title', 'Id', 'Type', 'ParentId', 'SortOrder', 'Hidden']) {
+        if ($rows[0] !== ['WebUrl', 'Url', 'Title', 'Type', 'Depth', 'Parent', 'SortOrder', 'Hidden']) {
             throw new \RuntimeException('Unexpected excel structure');
         }
         $this->brothers = [];
         \array_shift($rows);
         foreach ($rows as $value) {
+            if (null == $value[self::FIELD_SORT_ORDER]) {
+                $this->logWarning($value[self::FIELD_URL], \sprintf('For parent "%s" : SortOrder is missing', $value[self::FIELD_PARENT_URL]), 'sort_order_missing', 'IGNORE');
+                continue;
+            }
+
             $sortOrder = \intval($value[self::FIELD_SORT_ORDER]);
             if (1 === $sortOrder) {
                 $this->treatBrotherhood();
@@ -115,10 +122,10 @@ final class GenerateStructureCommand extends AbstractCommand
         return self::EXECUTE_SUCCESS;
     }
 
-    private function logWarning(string $url, string $message, string $type): void
+    private function logWarning(string $url, string $message, string $type, string $category = 'ERROR'): void
     {
         $this->io->warning(\sprintf('URL %s: %s', $url, $message));
-        $this->logs[] = [$url, $message, $type];
+        $this->logs[] = [$url, $message, $type, $category];
     }
 
     private function treatBrotherhood(): void
@@ -127,10 +134,80 @@ final class GenerateStructureCommand extends AbstractCommand
             return;
         }
         $this->io->text(\sprintf('This brotherhood contains %d urls', \count($this->brothers)));
-        $firstPage = null;
         $children = [];
         $alreadyTreated = [];
+
+        $parentPath = \str_replace(self::TECHNICAL_BASE_URL, '', $this->brothers[0][self::FIELD_PARENT_URL]);
+        $this->brothers[0][self::FIELD_PARENT_URL] = $parentPath;
+        $parent = $this->cacheManager->get(self::BASE_URL.$this->brothers[0][self::FIELD_PARENT_URL]);
+
+        if (!$parent->hasResponse()) {
+            throw new \RuntimeException('Response is missing');
+        }
+        $code = $parent->getResponse()->getStatusCode();
+
+        if (\in_array($code, [301, 302])) {
+            $redirect = $parent->getResponse()->getHeaders()['Location'][0] ?? null;
+            if (null === $redirect) {
+                $this->logWarning($this->brothers[0][self::FIELD_PARENT_URL], 'Parent webURL Redirect to null', 'parent_null_redirect');
+                $parent = null;
+            } else {
+                $url = new Url($redirect);
+                if (!isset($alreadyTreated[$url->getPath()])) {
+                    $alreadyTreated[$url->getPath()] = true;
+                    $this->brothers[0][self::FIELD_PARENT_URL] = $url->getPath();
+                    $parent = $this->cacheManager->get($redirect);
+                    if (!$parent->hasResponse()) {
+                        throw new \RuntimeException('Response is missing');
+                    }
+                    $code = $parent->getResponse()->getStatusCode();
+                }
+            }
+        }
+
+        if (null != $parent) {
+            if ($code >= 400) {
+                $this->logWarning($this->brothers[0][self::FIELD_PARENT_URL], $parent->getErrorMessage() ?? 'Parent Url in error', 'parent_http_error');
+                $parent = null;
+            } elseif (\in_array($code, [301, 302])) {
+                $this->logWarning($this->brothers[0][self::FIELD_PARENT_URL], \sprintf('Parent Url Redirect to %s', $parent->getResponse()->getHeaders()['Location'][0]), 'parent_redirect', 'INFO');
+                $parent = null;
+            } elseif (200 !== $code) {
+                $this->logWarning($this->brothers[0][self::FIELD_PARENT_URL], \sprintf('Parent Url Not supported code %d', $code), 'parent_code_not_supported');
+                $parent = null;
+            }
+            if (!isset($this->hitByPath[$this->brothers[0][self::FIELD_PARENT_URL]])) {
+                $this->logWarning($this->brothers[0][self::FIELD_PARENT_URL], 'Parent Url Not imported in elasticMS', 'parent-not-imported');
+                $parent = null;
+            }
+        }
+
         foreach ($this->brothers as $id => $row) {
+            if (('FALSE' === $row[self::FIELD_HIDDEN] && 'AuthoredLinkPlain' === $row[self::FIELD_TYPE]) || ('TRUE' === $row[self::FIELD_HIDDEN] && 'Page' === $row[self::FIELD_TYPE])) {
+                $duplicate = false;
+                foreach ($this->brothers as $key => $b) {
+                    // IF AuthoredLinkPlain
+                    if ($id != $key && $b[self::FIELD_URL] === $row[self::FIELD_URL] && 'TRUE' === $b[self::FIELD_HIDDEN] && 'Page' === $b[self::FIELD_TYPE] && 'AuthoredLinkPlain' === $row[self::FIELD_TYPE]) {
+                        $duplicate = true;
+                    }
+                    // IF Page
+                    if ($id != $key && $b[self::FIELD_URL] === $row[self::FIELD_URL] && 'FALSE' === $b[self::FIELD_HIDDEN] && 'AuthoredLinkPlain' === $b[self::FIELD_TYPE] && 'Page' === $row[self::FIELD_TYPE]) {
+                        $row[self::FIELD_TITLE] = $b[self::FIELD_TITLE];
+                        $row[self::FIELD_HIDDEN] = $b[self::FIELD_HIDDEN];
+                        $row[self::FIELD_SORT_ORDER] = $b[self::FIELD_SORT_ORDER];
+                    }
+                }
+                if ($duplicate) {
+                    $this->logWarning($row[self::FIELD_URL], 'Url (type=Page) is hide in menu but a brother (AuthoredLinkPlain) exist with same URL', 'duplicate-menu', 'IGNORE');
+                    continue;
+                }
+            }
+
+            if ('AuthoredLinkPlain' === $row[self::FIELD_TYPE] && '0' === $row[self::FIELD_DEPTH]) {
+                $this->logWarning($row[self::FIELD_URL], \sprintf('With parent "%s" : AuthoredLinkPlain depth 0', $row[self::FIELD_PARENT_URL]), 'depth_zero', 'IGNORE');
+                continue;
+            }
+
             $result = $this->cacheManager->get(self::BASE_URL.$row[self::FIELD_URL]);
             if (!$result->hasResponse()) {
                 throw new \RuntimeException('Response is missing');
@@ -159,87 +236,67 @@ final class GenerateStructureCommand extends AbstractCommand
                 $this->logWarning($row[self::FIELD_URL], $result->getErrorMessage() ?? 'Url in error', 'http_error');
                 continue;
             } elseif (\in_array($code, [301, 302])) {
-                $this->logWarning($row[self::FIELD_URL], \sprintf('Redirect to %s', $result->getResponse()->getHeaders()['Location'][0]), 'redirect');
+                $this->logWarning($row[self::FIELD_URL], \sprintf('Url Redirect to "%s"', $result->getResponse()->getHeaders()['Location'][0]), 'redirect', 'INFO');
                 continue;
             } elseif (200 !== $code) {
-                $this->logWarning($row[self::FIELD_URL], \sprintf('Not supported code %d', $code), 'code_not_supported');
+                $this->logWarning($row[self::FIELD_URL], \sprintf('Url Not supported code %d', $code), 'code_not_supported');
                 continue;
             }
             if (!isset($this->hitByPath[$row[self::FIELD_URL]])) {
-                $this->logWarning($row[self::FIELD_URL], 'Not imported in elasticMS', 'not-imported');
+                $this->logWarning($row[self::FIELD_URL], 'Url Not imported in elasticMS', 'not-imported');
                 continue;
             }
-            if ('TRUE' === $row[self::FIELD_HIDDEN] && 'Page' === $row[self::FIELD_TYPE]) {
-                $urls = [];
-                foreach ($this->brothers as $b) {
-                    $urls[] = $b[self::FIELD_URL];
+
+            if (\in_array($row[self::FIELD_TYPE], ['Area', 'Page'])) { // $parentPath
+                $arrayPath = \explode('/', $row[self::FIELD_URL]);
+                $parentToCompare = \implode('/', \array_slice($arrayPath, 0, -2));
+
+                if ('default.aspx' === \end($arrayPath)) {
+                    $parentToCompare = \implode('/', \array_slice($arrayPath, 0, -3));
                 }
-                if ((\array_count_values($urls)[$row[self::FIELD_URL]] ?? 0) > 1) {
-                    $this->logWarning($row[self::FIELD_URL], 'Hide menu', 'duplicate-menu');
+
+                if ($parentToCompare !== $parentPath) {
+                    $this->logWarning($row[self::FIELD_URL], \sprintf('WebUrl parent "%s" mismatch with dynamic parent "%s" (based on Url)', $parentPath, $parentToCompare), 'parent_mismatch', 'IGNORE');
                     continue;
                 }
             }
-            if (null === $firstPage && \in_array($row[self::FIELD_TYPE], ['Area', 'Page'])) {
-                $firstPage = $row;
+
+            if (null == $parent) {
+                $this->logWarning($row[self::FIELD_URL], \sprintf('The parent "%s" has an error : url is IGNORE', $parentPath), 'parent_not_defined');
+                continue;
             }
+
             $children[] = $row;
         }
 
         if (0 === \count($children)) {
             return;
         }
+        \usort($children, fn ($a, $b) => $a[self::FIELD_SORT_ORDER] <=> $b[self::FIELD_SORT_ORDER]);
+        $parentUrl = new Url(self::BASE_URL.$this->brothers[0][self::FIELD_PARENT_URL]);
 
-        if (null === $firstPage) {
-            $this->logWarning($this->brothers[0][self::FIELD_URL], 'Impossible to identify the parent: no page in menu', 'no_page_in_menu');
-
-            return;
-        }
-
-        $result = $this->cacheManager->get(self::BASE_URL.$firstPage[self::FIELD_URL]);
-        $crawler = new Crawler($result->getResponse()->getBody()->getContents());
-        $nodes = $crawler->filter('.breadcrumb a');
-
-        if (0 === $nodes->count()) {
+        $parentMenuId = $this->generateMenuId($this->getIdByPath($parentUrl->getPath()));
+        $parent = $this->menu->getItemById($parentMenuId);
+        if (null === $parent) {
             $parent = $this->menu;
-        } else {
-            $href = $nodes->last()->attr('href');
-            if (null === $href) {
-                $this->logWarning($firstPage[self::FIELD_URL], 'Parent without url', 'parent_without_url');
-
-                return;
-            }
-            $parentUrl = new Url($href);
-            if (!isset($this->hitByPath[$parentUrl->getPath()])) {
-                $this->logWarning($firstPage[self::FIELD_URL], \sprintf('Parent %s not in the structure', $parentUrl->getPath()), 'parent_not_in_structure');
-
-                return;
-            }
-
-            $parentMenuId = $this->generateMenuId($this->getIdByPath($parentUrl->getPath()));
-            $parent = $this->menu->getItemById($parentMenuId);
-            if (null === $parent) {
-                $this->logWarning($parentUrl->getPath(), \sprintf('Parent not imported for %s', $firstPage[self::FIELD_URL]), 'parent_not_imported');
-
-                return;
-            }
         }
 
         $accessor = PropertyAccessor::createPropertyAccessor();
         foreach ($children as $child) {
             $id = $this->getIdByPath($child[self::FIELD_URL]);
             $type = $this->getTypeByPath($child[self::FIELD_URL]);
-            $menuId = $this->generateMenuId($id);
+            $menuId = ('AuthoredLinkPlain' === $child[self::FIELD_TYPE]) ? $this->generateMenuId($parentMenuId.$id) : $this->generateMenuId($id);
             $data = $parent->getItemById($menuId) ?? null;
             if (null === $data) {
                 $data = new JsonMenuNested([
                     'id' => $menuId,
-                    'label' => $child[self::FIELD_TITLE],
+                    'label' => \html_entity_decode($child[self::FIELD_TITLE], ENT_QUOTES),
                     'type' => $type,
                 ]);
                 $parent->addChild($data);
                 $data = $parent->getItemById($menuId);
             } else {
-                $data->setLabel(\sprintf('%s / %s', $data->getLabel(), $child[self::FIELD_TITLE]));
+                $data->setLabel(\sprintf('%s / %s', $data->getLabel(), \html_entity_decode($child[self::FIELD_TITLE], ENT_QUOTES)));
             }
             if (null === $data) {
                 throw new \RuntimeException('Unexpected nul data');
@@ -248,7 +305,7 @@ final class GenerateStructureCommand extends AbstractCommand
             $accessor->setValue($object, '[label]', $data->getLabel());
             $hide = $accessor->getValue($object, '[hide]');
             if (null !== $hide && $hide !== ('TRUE' === $child[self::FIELD_HIDDEN])) {
-                $this->logWarning($child[self::FIELD_URL], 'Hide mismatch with siblings', 'hide_mismatch');
+                $this->logWarning($child[self::FIELD_URL], 'Hide mismatch with siblings', 'hide_mismatch', 'INFO');
                 $accessor->setValue($object, '[hide]', false);
             } else {
                 $accessor->setValue($object, '[hide]', 'TRUE' === $child[self::FIELD_HIDDEN]);
@@ -263,7 +320,7 @@ final class GenerateStructureCommand extends AbstractCommand
             if (!\in_array($locale, ['fr', 'nl', 'de', 'en'])) {
                 $this->logWarning($child[self::FIELD_URL], \sprintf('Language not identified %s', $locale), 'language_not_identified');
             } else {
-                $accessor->setValue($object, \sprintf('[label_%s]', $locale), $child[self::FIELD_TITLE]);
+                $accessor->setValue($object, \sprintf('[label_%s]', $locale), \html_entity_decode($child[self::FIELD_TITLE], ENT_QUOTES));
             }
             $data->setObject($object);
         }
@@ -313,7 +370,7 @@ final class GenerateStructureCommand extends AbstractCommand
                     continue;
                 }
                 if (isset($this->hitByPath[$value])) {
-                    $this->logWarning($value, \sprintf('imported multiple time with oouid %s and ouuid %s', $this->hitByPath[$value]['id'], $ouuid), 'too_much_import');
+                    $this->logWarning($value, \sprintf('imported multiple time with oouid %s and ouuid %s', $this->hitByPath[$value]['id'], $ouuid), 'too_much_import', 'INFO');
                     continue;
                 }
                 $this->hitByPath[$value] = [
@@ -349,15 +406,15 @@ final class GenerateStructureCommand extends AbstractCommand
         return \sha1(\sprintf('import_structure:%s', $id));
     }
 
-    private function checkLocales()
+    private function checkLocales(): void
     {
         foreach ($this->menu as $item) {
             foreach (['fr', 'nl'] as $locale) {
-                if (! isset($item->getObject()['label_' . $locale])) {
+                if (!isset($item->getObject()['label_'.$locale])) {
                     $emsLink = \explode(':', $item->getObject()[$item->getType()]);
                     $id = \end($emsLink);
                     $path = \array_search(['id' => $id, 'type' => $item->getType()], $this->hitByPath);
-                    $this->logWarning(($path ?: $id), \sprintf('missing %s', $locale), 'menu_mismatch');
+                    $this->logWarning($path ?: $id, \sprintf('missing %s in parent %s', $locale, $item->getParent()->getLabel()), 'menu_mismatch', 'INFO');
                 }
             }
         }
